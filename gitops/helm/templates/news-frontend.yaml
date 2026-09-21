@@ -43,7 +43,8 @@ spec:
   selector:
     app: {{ .Values.newsFrontend.name }}
   ports:
-    - port: {{ .Values.newsFrontend.ports.servicePort }}
+    - name: http
+      port: {{ .Values.newsFrontend.ports.servicePort }}
       targetPort: {{ .Values.newsFrontend.ports.containerPort }}
 ---
 apiVersion: route.openshift.io/v1
@@ -59,7 +60,7 @@ spec:
     kind: Service
     name: {{ .Values.newsFrontend.name }}
   port:
-    targetPort: {{ .Values.newsFrontend.ports.servicePort }}
+    targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
