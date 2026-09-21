@@ -52,9 +52,11 @@ commands:
       label: "1. Install Python dependencies"
       component: python-dev
       workingDir: ${PROJECT_SOURCE}/components/location-extractor
+      # The image we ship runs 3.12; the UDI carries 3.9 and 3.11, so we pin
+      # the newer one here rather than letting 'python' pick 3.9.
       commandLine: |
-        pip install --user -r requirements-dev.txt
-        python -m spacy download en_core_web_md
+        python3.11 -m pip install --user -r requirements-dev.txt
+        python3.11 -m spacy download en_core_web_md
       group:
         kind: build
         isDefault: true
@@ -64,7 +66,7 @@ commands:
       label: "2. Run the unit tests"
       component: python-dev
       workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      commandLine: python -m pytest test -v
+      commandLine: python3.11 -m pytest test -v
       group:
         kind: test
         isDefault: true
@@ -74,7 +76,7 @@ commands:
       label: "3. Run the location-extractor locally"
       component: python-dev
       workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      commandLine: python -m src.server
+      commandLine: python3.11 -m src.server
       group:
         kind: run
         isDefault: true

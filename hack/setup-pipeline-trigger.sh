@@ -16,6 +16,26 @@ install -m 0755 "${REPO_ROOT}/hack/pre-push" "${REPO_ROOT}/.git/hooks/pre-push" 
   exit 0
 }
 
+# Dev Spaces mounts secrets read-only and world-readable; ssh refuses to touch
+# a private key like that, so we take a copy with the permissions it wants.
+MOUNTED_KEY="/home/user/.ssh-mounted/id_ed25519"
+if [ -r "${MOUNTED_KEY}" ]; then
+  mkdir -p "${HOME}/.ssh" && chmod 700 "${HOME}/.ssh"
+  install -m 0600 "${MOUNTED_KEY}" "${HOME}/.ssh/id_ed25519"
+  ssh-keyscan -t ed25519,rsa github.com > "${HOME}/.ssh/known_hosts" 2>/dev/null
+  cat > "${HOME}/.ssh/config" <<SSHCFG
+Host github.com
+  IdentityFile ${HOME}/.ssh/id_ed25519
+  IdentitiesOnly yes
+SSHCFG
+  chmod 600 "${HOME}/.ssh/config"
+  # The project is cloned over https, which is read-only for us.
+  git -C "${REPO_ROOT}" remote set-url origin git@github.com:maxisses/ice-demo.git
+  git -C "${REPO_ROOT}" config user.name  "${GIT_AUTHOR_NAME:-Max Dargatz}"
+  git -C "${REPO_ROOT}" config user.email "${GIT_AUTHOR_EMAIL:-max.dargatz@mailbox.org}"
+  echo "pipeline trigger: git remote switched to ssh, you can push from here"
+fi
+
 if [ -n "${ICE_DEMO_WEBHOOK_URL:-}" ] && [ -n "${ICE_DEMO_WEBHOOK_SECRET:-}" ]; then
   cat <<MSG
 
