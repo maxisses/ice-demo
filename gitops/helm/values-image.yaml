@@ -3,4 +3,4 @@
 # Argo CD watches the repo and rolls the new tag out - that is the
 # whole GitOps loop in five lines of YAML.
 locationExtractor:
-  imageTag: 3a4eb70
+  imageTag: f087bed
