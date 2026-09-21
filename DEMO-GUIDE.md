@@ -14,13 +14,14 @@ Two checks, thirty seconds:
 
 ```bash
 oc get applications.argoproj.io localnews -n openshift-gitops   # Synced / Healthy
-oc get devworkspace -A | grep ice-demo                          # both Running
+oc get devworkspace -A | grep ice-demo                          # Running
 ```
 
-If a workspace is stopped, start it now. A cold start pulls a 1.5 GB image and
-you do not want to narrate that.
+If the workspace is stopped, start it now. A cold start pulls a 1.5 GB image
+and you do not want to narrate that. It is one workspace and it does
+everything - editing, tests, the scan and the coding agent.
 
-Have four tabs open: the AI workspace, the OpenShift console on Pipelines, Argo
+Have four tabs open: the workspace, the OpenShift console on Pipelines, Argo
 CD, and a terminal.
 
 ## The five minutes
@@ -36,7 +37,7 @@ CD, and a terminal.
 
 ### 0:00 — Start the clock
 
-In the `ice-demo` workspace, change the greeting in
+In the workspace, change the greeting in
 `components/location-extractor/src/server.py`, then:
 
 ```bash
@@ -49,7 +50,7 @@ at 1:30 and it will be done.
 
 ### 0:20 — The CVE finds you
 
-Switch to the `ice-demo-ai` workspace:
+Back in the workspace terminal:
 
 ```bash
 python3.11 ai/dependency-review.py ai/demo-requirements.txt

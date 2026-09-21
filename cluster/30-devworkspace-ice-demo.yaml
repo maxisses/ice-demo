@@ -1,15 +1,11 @@
-# The lifecycle workspace, as applied with oc.
+# The workspace, as applied with oc. Mirrors devfile.yaml in the repo root -
+# keep them in step.
 #
-# The normal way in is the Dev Spaces dashboard, which resolves the editor for
-# you from the factory URL:
+# The normal way in is the Dev Spaces dashboard:
 #   https://devspaces.apps.ocp4.stormshift.coe.muc.redhat.com/#https://github.com/maxisses/ice-demo
 #
-# This file is the same workspace expressed directly, which is handy when you
-# want it pre-created before a talk. It refers to a DevWorkspaceTemplate named
-# che-code that has to exist in the same namespace - hack/create-editor-template.sh
-# generates it from the cluster's own editor definitions.
-#
-# spec.template mirrors devfile.yaml in the repo root. Keep them in step.
+# Applied directly like this it needs the che-code DevWorkspaceTemplate in the
+# same namespace - hack/create-editor-template.sh generates it.
 apiVersion: workspace.devfile.io/v1alpha2
 kind: DevWorkspace
 metadata:
@@ -17,93 +13,114 @@ metadata:
   namespace: mdargatz-redhat-com-admin-devspaces-cyub7k
 spec:
   started: true
-  contributions:
-  - kubernetes:
-      name: che-code
-    name: editor
   routingClass: che
+  contributions:
+  - name: editor
+    kubernetes:
+      name: che-code
   template:
-    commands:
-    - exec:
-        commandLine: 'pip install --user -r requirements-dev.txt
-
-          python -m spacy download en_core_web_md
-
-          '
-        component: python-dev
-        group:
-          isDefault: true
-          kind: build
-        label: 1. Install Python dependencies
-        workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      id: install-deps
-    - exec:
-        commandLine: python -m pytest test -v
-        component: python-dev
-        group:
-          isDefault: true
-          kind: test
-        label: 2. Run the unit tests
-        workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      id: run-tests
-    - exec:
-        commandLine: python -m src.server
-        component: python-dev
-        group:
-          isDefault: true
-          kind: run
-        label: 3. Run the location-extractor locally
-        workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      id: run-dev
-    - exec:
-        commandLine: ./hack/setup-pipeline-trigger.sh
-        component: python-dev
-        group:
-          kind: run
-        label: 4. Re-arm the git hook that starts the Tekton pipeline
-        workingDir: ${PROJECT_SOURCE}
-      id: setup-pipeline-trigger
-    - exec:
-        commandLine: git pull --rebase origin main
-        component: python-dev
-        group:
-          kind: run
-        label: 5. Pull the tag commit the pipeline pushed
-        workingDir: ${PROJECT_SOURCE}
-      id: sync-with-pipeline
+    projects:
+    - name: ice-demo
+      git:
+        remotes:
+          origin: https://github.com/maxisses/ice-demo.git
+        checkoutFrom:
+          revision: main
     components:
-    - container:
-        cpuLimit: 2000m
+    - name: dev
+      container:
+        image: registry.redhat.io/devspaces/udi-rhel9:latest
+        memoryRequest: 1Gi
+        memoryLimit: 6Gi
         cpuRequest: 200m
+        cpuLimit: 2000m
+        mountSources: true
         endpoints:
-        - exposure: public
-          name: flask
-          protocol: https
+        - name: flask
           targetPort: 5000
+          exposure: public
+          protocol: https
         env:
         - name: ICE_DEMO_NAMESPACE
           value: md-ice-demo-part1
+        - name: NPM_CONFIG_PREFIX
+          value: /home/user/.npm-global
         - name: PIP_CACHE_DIR
           value: /home/user/.cache/pip
-        image: registry.redhat.io/devspaces/udi-rhel9:latest
-        memoryLimit: 6Gi
-        memoryRequest: 1Gi
-        mountSources: true
-        sourceMapping: /projects
         volumeMounts:
-        - name: pip-cache
-          path: /home/user/.cache/pip
-      name: python-dev
-    - name: pip-cache
+        - name: tool-cache
+          path: /home/user/.npm-global
+    - name: tool-cache
       volume:
-        size: 2Gi
+        size: 3Gi
+    commands:
+    - id: install-tooling
+      exec:
+        label: 1. Install dependencies, the scanner and the coding agent
+        component: dev
+        workingDir: ${PROJECT_SOURCE}
+        commandLine: ./ai/install.sh
+        group:
+          kind: build
+          isDefault: true
+    - id: run-tests
+      exec:
+        label: 2. Run the unit tests
+        component: dev
+        workingDir: ${PROJECT_SOURCE}/components/location-extractor
+        commandLine: python3.11 -m pytest test -v
+        group:
+          kind: test
+          isDefault: true
+    - id: scan-dependencies
+      exec:
+        label: 3. Scan the dependencies for known vulnerabilities
+        component: dev
+        workingDir: ${PROJECT_SOURCE}
+        commandLine: python3.11 -m pip_audit -r ai/demo-requirements.txt --progress-spinner off
+        group:
+          kind: test
+    - id: ai-dependency-review
+      exec:
+        label: 4. Ask the model what to do about them
+        component: dev
+        workingDir: ${PROJECT_SOURCE}
+        commandLine: python3.11 ai/dependency-review.py ai/demo-requirements.txt
+        group:
+          kind: run
+          isDefault: true
+    - id: coding-agent
+      exec:
+        label: 5. Open the coding agent
+        component: dev
+        workingDir: ${PROJECT_SOURCE}
+        commandLine: ./ai/agent.sh
+        group:
+          kind: run
+    - id: run-dev
+      exec:
+        label: 6. Run the location-extractor locally
+        component: dev
+        workingDir: ${PROJECT_SOURCE}/components/location-extractor
+        commandLine: python3.11 -m src.server
+        group:
+          kind: run
+    - id: setup-git-and-trigger
+      exec:
+        label: 7. Re-arm git and the pipeline trigger
+        component: dev
+        workingDir: ${PROJECT_SOURCE}
+        commandLine: ./hack/setup-pipeline-trigger.sh
+        group:
+          kind: run
+    - id: sync-with-pipeline
+      exec:
+        label: 8. Pull the tag commit the pipeline pushed
+        component: dev
+        workingDir: ${PROJECT_SOURCE}
+        commandLine: git pull --rebase origin main
+        group:
+          kind: run
     events:
       postStart:
-      - setup-pipeline-trigger
-    projects:
-    - git:
-        checkoutFrom:
-          revision: main
-        remotes:
-          origin: https://github.com/maxisses/ice-demo.git
-      name: ice-demo
+      - setup-git-and-trigger

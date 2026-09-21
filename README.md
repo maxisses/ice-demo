@@ -41,8 +41,7 @@ components/location-extractor/   the Python service we build on stage
   Containerfile                  what the pipeline builds (seconds)
   Containerfile.base             spaCy + language model (minutes, built once)
 devfile.yaml                     the Dev Spaces workspace
-devfile-ai.yaml                  the AI workspace (scanner + coding agent)
-ai/                              dependency review script and agent config
+ai/                              dependency review, coding agent, install
 cluster/                         namespace, operator patches, Lightspeed, workspaces
 hack/bootstrap.sh                rebuilds all of it on a fresh cluster
 hack/                            the git hook that fires the pipeline
@@ -75,9 +74,14 @@ The workspace comes up on the Red Hat Universal Developer Image, which carries p
 image we ship runs 3.12 and the UDI's default `python` is 3.9.) Point out that this IDE is a
 pod: `oc get pods -n <your>-devspaces`.
 
-The workspace arms itself on start: a `postStart` event installs the `pre-push` hook, copies
-the mounted deploy key into `~/.ssh` and switches the git remote to SSH. If you ever need to
-redo that by hand, run command **4. Re-arm the git hook**.
+The workspace arms itself on start. A `postStart` event sets your git identity,
+installs the `pre-push` hook, copies the mounted deploy key into `~/.ssh` and
+switches the git remote to SSH, so you can commit and push without touching a
+setting. If you ever need to redo it by hand, that is command **7**.
+
+The identity matters more than it looks. Without `user.name` and `user.email`
+git refuses to commit, and it tells you so at commit time rather than at start
+time - which is a rotten thing to find out with an audience watching.
 
 ### 2. Change something
 
@@ -164,76 +168,36 @@ tkn pipeline start build-base-image -n md-ice-demo-part1 \
   --serviceaccount pipeline --showlog
 ```
 
-## The second workspace: a model that reads your dependencies
+## The AI commands in the workspace
 
-`devfile-ai.yaml` starts a second workspace, `ice-demo-ai`, on the same repo.
-It is the bridge into part three of the talk: the same application lifecycle,
-but with a model helping, and the model runs on OpenShift AI rather than
-somewhere in California.
+The same workspace carries the security half of the demo. Commands 3 to 5:
 
-Factory URL:
-
-```
-https://devspaces.apps.ocp4.stormshift.coe.muc.redhat.com/#https://github.com/maxisses/ice-demo?df=devfile-ai.yaml
-```
-
-Four commands, in order:
-
-1. **Install the scanner and the coding agent** - `pip-audit` and `opencode`.
-2. **Scan the dependencies.** This is not a canned result. As of today
-   `pip-audit` finds two real advisories against the Flask version we pin,
-   PYSEC-2026-1377 and PYSEC-2026-2151.
-3. **Ask the model what to do about them.** `ai/dependency-review.py` hands
-   the findings and the requirements file to `deepseek-r1-distill-qwen-14b`
-   and prints two things: the answer, and the model's own reasoning on the way
-   there. Worth showing - it works out that 3.1.3 covers both advisories so
-   you only need one bump, and it says so.
-4. **Open the coding agent.** `opencode` in the terminal, wired to the same
+3. **Scan the dependencies.** Not a canned result - `pip-audit` queries the
+   PyPI advisory database live. It runs against `ai/demo-requirements.txt`,
+   which deliberately keeps the pins from before we patched Flask, because the
+   real `requirements.txt` comes back clean and a clean scan makes a dull demo.
+4. **Ask the model what to do about them.** `ai/dependency-review.py` hands the
+   findings and the requirements file to a model and prints two things: the
+   answer, and the model's own reasoning on the way there. Worth showing - it
+   works out that one bump to urllib3 2.7.0 covers five separate advisories.
+5. **Open the coding agent.** `opencode` in the terminal, wired to the same
    endpoint, with the repo as its working directory. Ask it to explain
-   `src/geocode.py` and it reads the file first.
+   `src/geocode.py` and it reads the file before answering.
 
-Two details worth knowing. The model is DeepSeek-R1, which thinks out loud: the
-answer arrives in `content` and the thinking in `reasoning_content`, and if you
-give it too few tokens you get the thinking and an empty answer. And opencode
-asks for 32,000 output tokens by default while this model serves 16,384 in
-total, so `ai/agent.sh` pins the limits - without that every request is
+Two details worth knowing. The MaaS model is DeepSeek-R1, which thinks out
+loud: the answer arrives in `content` and the thinking in `reasoning_content`,
+and if you give it too few tokens you get the thinking and an empty answer. And
+opencode asks for 32,000 output tokens by default while that model serves
+16,384 in total, so `ai/agent.sh` pins the limits - without it every request is
 rejected before it reaches a GPU.
 
 The editor also picks up `.vscode/extensions.json`, which asks for Red Hat
 Dependency Analytics. That flags vulnerable dependencies inline while you type,
-so you can show the same finding twice: once as a squiggle in the editor, once
-as a scan in the terminal.
+so you can show the same finding twice: once as a squiggle, once as a scan.
 
-Credentials come from an `ice-demo-ai` secret in your Dev Spaces namespace,
-mounted as `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `AI_MODEL`. Nothing is baked
-into the devfile.
-
-## Lightspeed, and the budget behind it
-
-`cluster/20-lightspeed-olsconfig.yaml` carries two providers and uses one.
-
-The default is `deepseek-v4-pro` through OpenRouter, and it calls tools: ask
-it what image a deployment is running and it queries the OpenShift MCP server
-and tells you, rather than handing you the `oc` command. That is what makes
-Lightspeed worth showing.
-
-The fallback is the free MaaS endpoint on OpenShift AI. It explains OpenShift
-well and does not call tools reliably - the 14B distill answers "run `oc get
-pods`" when you ask it what is running. Switch to it by changing
-`defaultProvider` and `defaultModel` at the bottom of that file.
-
-OpenRouter is metered, so keep an eye on it:
-
-```bash
-curl -s https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_KEY" \
-  | jq '.data | {usage, limit, limit_remaining, expires_at}'
-```
-
-A plain question costs about half a cent. One that sends the model round the
-tool loop a few times costs about one and a half. The MCP tool definitions are
-roughly 7,400 tokens and get re-sent on every round, which is where most of it
-goes. Point only Lightspeed at OpenRouter - the dependency review and the
-coding agent have the free endpoint and much longer prompts.
+Model credentials come from an `ice-demo-ai` secret in your Dev Spaces
+namespace, mounted as `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `AI_MODEL`.
+Nothing is baked into the devfile.
 
 ## The feeds, and why /news looks empty
 
@@ -368,10 +332,6 @@ generating a new pair, replacing the GitHub deploy key, and updating the secret.
 **The workspace fails with "0/6 nodes are available: pod has unbound immediate
 PersistentVolumeClaims".** The per-user PVC is still being provisioned. Start
 the workspace again; the second attempt works.
-
-**The second workspace will not schedule.** Both workspaces share one per-user
-PVC and the storage class is ReadWriteOnce, so they have to land on the same
-node. They did here, but if one refuses to start, stop the other one first.
 
 **A workspace fails with "plugin for component editor not found".** The two
 workspaces in this namespace were created with `oc`, so they point at a
