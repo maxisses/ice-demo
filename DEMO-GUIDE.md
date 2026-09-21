@@ -137,28 +137,42 @@ and we can't switch it off from inside the image.
 
 ### 3:20 — Ask the cluster
 
-Chat icon, top right of the console. OpenShift Lightspeed, wired to the same
-model the dependency review used.
+Chat icon, top right of the console. OpenShift Lightspeed, with
+`deepseek-v4-pro` behind it through OpenRouter.
 
-Ask it something you just showed:
+Ask it about the thing you just broke:
 
-> What does the restricted-v2 SecurityContextConstraint prevent a pod from
-> doing? Three short bullets.
+> Check the Argo CD Application named localnews in namespace
+> openshift-gitops. Does it have self-healing enabled, and what would that do
+> if someone scaled a deployment by hand?
 
-It answers correctly - privilege escalation, raw device access, host mounts.
-That's the honest use for it: the thing that explains the platform to someone
-who has to operate it at two in the morning, with Red Hat's own documentation
-behind it rather than a search engine's best guess.
+It does not answer from documentation. It calls `resources_get` against the
+OpenShift MCP server, reads the actual Application, finds
+`syncPolicy.automated.selfHeal: true`, and then explains what you watched
+happen ninety seconds ago. Three tested questions, in rising order of how much
+they impress:
 
-Be straight about the limit, because someone will ask. Lightspeed has cluster
-introspection switched on and an MCP server running, but this particular model
-is a 14B distill and does not reliably call those tools. Ask it to list your
-pods and it hands you a `kubectl` command instead of an answer. Put a bigger
-tool-calling model behind the same configuration and that changes - the
-configuration is one URL and one model name, and you saw it in
-`cluster/20-lightspeed-olsconfig.yaml`. Again: part three.
+| Ask | What it does |
+|---|---|
+| What does the restricted-v2 SCC prevent a pod from doing? | Answers from Red Hat's own docs, no cluster access needed |
+| What image tag is the location-extractor deployment in md-ice-demo-part1 running right now? | One tool call, reads the live Deployment, gives you the tag |
+| Check the Argo CD Application localnews - is self-healing on, and what would it do if I scaled a deployment by hand? | Reads the Application, connects it to the drift you just caused |
 
-Keep the questions short. Long prompts eat the context window.
+Now the part worth saying out loud. This is the same Lightspeed that was
+installed an hour ago answering "run `oc get pods` to find out" when you asked
+it what was running. Nothing about the assistant changed. We pointed it at a
+model that calls tools, and it went from a documentation search to something
+that reads your cluster. That is one URL and one model name in
+`cluster/20-lightspeed-olsconfig.yaml`, and both providers are still in there
+side by side.
+
+If you want the strongest version of the line: the platform decides what the
+assistant can reach, and you decide how clever it is. Those are separate knobs,
+and neither one is your application's problem.
+
+Keep the questions specific. Name the resource and the namespace. Vague
+questions send the model round the tool loop five times and it can come back
+empty.
 
 ### 4:40 — It was containers all along
 
@@ -189,4 +203,14 @@ console - nobody in the audience knows it was supposed to be automatic.
 without the model.
 
 **Lightspeed answers slowly.** It always does on the first question of a
-session. Ask your first question while walking over to the console.
+session, and a question that needs several tool calls takes half a minute. Ask
+your first one while walking over to the console.
+
+**Lightspeed comes back with an empty answer.** It ran out of tool rounds -
+five is the limit. Ask again, naming the resource and the namespace.
+
+**Lightspeed says it cannot reach the model.** The OpenRouter credit is gone,
+or the key expired. Switch the two fields at the bottom of
+`cluster/20-lightspeed-olsconfig.yaml` to the `maas` provider, apply, and wait
+about a minute. You lose the cluster lookups and keep the explanations, which
+is enough to get through the demo.

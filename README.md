@@ -208,6 +208,33 @@ Credentials come from an `ice-demo-ai` secret in your Dev Spaces namespace,
 mounted as `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `AI_MODEL`. Nothing is baked
 into the devfile.
 
+## Lightspeed, and the budget behind it
+
+`cluster/20-lightspeed-olsconfig.yaml` carries two providers and uses one.
+
+The default is `deepseek-v4-pro` through OpenRouter, and it calls tools: ask
+it what image a deployment is running and it queries the OpenShift MCP server
+and tells you, rather than handing you the `oc` command. That is what makes
+Lightspeed worth showing.
+
+The fallback is the free MaaS endpoint on OpenShift AI. It explains OpenShift
+well and does not call tools reliably - the 14B distill answers "run `oc get
+pods`" when you ask it what is running. Switch to it by changing
+`defaultProvider` and `defaultModel` at the bottom of that file.
+
+OpenRouter is metered, so keep an eye on it:
+
+```bash
+curl -s https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_KEY" \
+  | jq '.data | {usage, limit, limit_remaining, expires_at}'
+```
+
+A plain question costs about half a cent. One that sends the model round the
+tool loop a few times costs about one and a half. The MCP tool definitions are
+roughly 7,400 tokens and get re-sent on every round, which is where most of it
+goes. Point only Lightspeed at OpenRouter - the dependency review and the
+coding agent have the free endpoint and much longer prompts.
+
 ## The feeds, and why /news looks empty
 
 `/news` takes a bounding box and returns nothing without one. That is not a

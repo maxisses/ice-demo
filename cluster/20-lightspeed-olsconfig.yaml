@@ -1,15 +1,26 @@
-# OpenShift Lightspeed, pointed at a model served outside this cluster.
+# OpenShift Lightspeed.
 #
-# The credentials live in a secret called maas-api-key in openshift-lightspeed,
-# which is NOT in this repo. Create it first:
+# Two providers are configured and only the default is used. Switching between
+# them is two fields at the bottom of this file, which is the whole point: the
+# assistant is the same, the brain behind it is a config change.
 #
+# openrouter  deepseek-v4-pro through OpenRouter. Calls tools, so it can read
+#             the cluster and answer questions about what is actually running.
+#             Costs money.
+# maas        deepseek-r1-distill-qwen-14b on OpenShift AI. Free, and good at
+#             explaining OpenShift, but it does not reliably call the MCP
+#             tools - ask it to list your pods and it hands you a kubectl
+#             command instead. Use it when the credit runs out.
+#
+# Neither key is in this repo. Create them first:
+#
+#   oc create secret generic openrouter-api-key -n openshift-lightspeed \
+#     --from-literal=apitoken='sk-or-v1-...'
 #   oc create secret generic maas-api-key -n openshift-lightspeed \
-#     --from-literal=apitoken='<your MaaS key>'
+#     --from-literal=apitoken='...'
 #
-# The provider type is 'openai' because the gateway is OpenAI-compatible; the
-# model behind it happens to be DeepSeek. Lightspeed is reachable only through
-# the chat icon in the OpenShift console - NetworkPolicies in the
-# openshift-lightspeed namespace keep the API to the console plugin.
+# Lightspeed is reachable only through the chat icon in the OpenShift console.
+# NetworkPolicies in openshift-lightspeed keep the API to the console plugin.
 apiVersion: ols.openshift.io/v1alpha1
 kind: OLSConfig
 metadata:
@@ -17,6 +28,22 @@ metadata:
 spec:
   llm:
     providers:
+      - name: openrouter
+        type: openai
+        url: https://openrouter.ai/api/v1
+        credentialsSecretRef:
+          name: openrouter-api-key
+        credentialKey: apitoken
+        models:
+          # The tilde is part of the model id, not a typo. OpenRouter uses it
+          # for "latest" aliases; today it resolves to deepseek-v4-pro-0813.
+          - name: "~deepseek/deepseek-pro-latest"
+            # The model offers a million tokens. We cap it well below that
+            # because every tool round re-sends the MCP tool definitions
+            # (~7,400 tokens) and we are paying by the token.
+            contextWindowSize: 128000
+            parameters:
+              maxTokensForResponse: 2048
       - name: maas
         type: openai
         url: https://maas-rhdp.apps.maas.redhatworkshops.io/v1
@@ -25,10 +52,15 @@ spec:
         credentialKey: apitoken
         models:
           - name: deepseek-r1-distill-qwen-14b
+            contextWindowSize: 16384
+            parameters:
+              maxTokensForResponse: 2048
   ols:
-    defaultProvider: maas
-    defaultModel: deepseek-r1-distill-qwen-14b
+    # Flip these two to 'maas' and 'deepseek-r1-distill-qwen-14b' to stop
+    # spending. The pod restarts in about a minute.
+    defaultProvider: openrouter
+    defaultModel: "~deepseek/deepseek-pro-latest"
     logLevel: INFO
-    # Lets Lightspeed read cluster resources through the MCP server, so you can
-    # ask it about what is actually running rather than only about the docs.
+    # Lets Lightspeed read cluster resources through the MCP server. Only
+    # useful with a model that actually calls tools - see above.
     introspectionEnabled: true
