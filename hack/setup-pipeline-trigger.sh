@@ -22,6 +22,15 @@ git -C "${REPO_ROOT}" config user.name  "${GIT_AUTHOR_NAME:-Max Dargatz}"
 git -C "${REPO_ROOT}" config user.email "${GIT_AUTHOR_EMAIL:-max.dargatz@mailbox.org}"
 echo "git identity: $(git -C "${REPO_ROOT}" config user.name) <$(git -C "${REPO_ROOT}" config user.email)>"
 
+# The pipeline pushes its image-tag commit to main on every build, so this
+# checkout is behind after every demo run - and if you committed in the
+# meantime, the two branches have genuinely diverged. Git then refuses to pull
+# at all ("Need to specify how to reconcile divergent branches") and the IDE
+# shows you a conflict it cannot resolve. Rebase is the right answer here: our
+# commit belongs on top of what the pipeline wrote.
+git -C "${REPO_ROOT}" config pull.rebase true
+git -C "${REPO_ROOT}" config rebase.autoStash true
+
 # Dev Spaces mounts secrets read-only and world-readable; ssh refuses to touch
 # a private key like that, so we take a copy with the permissions it wants.
 MOUNTED_KEY="/home/user/.ssh-mounted/id_ed25519"

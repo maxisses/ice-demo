@@ -48,9 +48,14 @@ spec:
         - name: PIP_CACHE_DIR
           value: /home/user/.cache/pip
         volumeMounts:
-        - name: tool-cache
+        - name: npm-tools
           path: /home/user/.npm-global
-    - name: tool-cache
+        - name: python-tools
+          path: /home/user/.local
+    - name: npm-tools
+      volume:
+        size: 2Gi
+    - name: python-tools
       volume:
         size: 3Gi
     commands:
