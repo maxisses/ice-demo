@@ -21,6 +21,9 @@ spec:
   steps:
     - name: run-tests
       image: $(params.IMAGE)
+      # The base image keeps the same ':base' tag, so without this the node
+      # happily reuses a stale copy after we rebuild it.
+      imagePullPolicy: Always
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
       script: |
         #!/usr/bin/env bash
