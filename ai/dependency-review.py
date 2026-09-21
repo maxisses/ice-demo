@@ -26,6 +26,11 @@ MODEL = os.getenv("AI_MODEL", "deepseek-r1-distill-qwen-14b")
 
 REQUIREMENTS = sys.argv[1] if len(sys.argv) > 1 else "components/location-extractor/requirements.txt"
 
+# The model serves a 16,384 token context. A long audit with full advisory text
+# blows straight past that, so we send the worst offenders and trim the prose.
+MAX_FINDINGS = int(os.getenv("AI_MAX_FINDINGS", "12"))
+MAX_DESCRIPTION = 240
+
 
 def audit(path: str) -> list[dict]:
     """Run pip-audit and return its findings, de-duplicated."""
@@ -52,9 +57,17 @@ def audit(path: str) -> list[dict]:
                 "installed": dep["version"],
                 "id": vuln["id"],
                 "fix_versions": vuln.get("fix_versions", []),
-                "description": (vuln.get("description") or "")[:600],
+                "description": (vuln.get("description") or "")[:MAX_DESCRIPTION],
             })
     return findings
+
+
+def worst_first(findings: list[dict]) -> list[dict]:
+    """Most-affected packages first, so a trim keeps the interesting ones."""
+    per_package: dict[str, int] = {}
+    for f in findings:
+        per_package[f["package"]] = per_package.get(f["package"], 0) + 1
+    return sorted(findings, key=lambda f: (-per_package[f["package"]], f["package"]))
 
 
 def ask(findings: list[dict], requirements: str) -> tuple[str, str]:
@@ -108,7 +121,12 @@ def main() -> None:
         fixes = ", ".join(f["fix_versions"]) or "no fix published"
         print(f"  {f['package']} {f['installed']}  {f['id']}  -> {fixes}")
 
-    reasoning, answer = ask(findings, open(REQUIREMENTS).read())
+    sent = worst_first(findings)[:MAX_FINDINGS]
+    if len(sent) < len(findings):
+        print(f"\n(sending the {len(sent)} most relevant of {len(findings)} to the model - "
+              f"its context is 16k tokens)")
+
+    reasoning, answer = ask(sent, open(REQUIREMENTS).read())
 
     if reasoning:
         print("\n" + "=" * 70)
