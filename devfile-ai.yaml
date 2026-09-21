@@ -1,0 +1,89 @@
+schemaVersion: 2.2.2
+metadata:
+  name: ice-demo-ai
+  displayName: ICE Demo - AI assisted development
+  description: >-
+    The same location-extractor, this time with a model helping out. Red Hat
+    Dependency Analytics flags vulnerable dependencies while you type, and a
+    coding agent talks to a model served on OpenShift AI - no data leaves the
+    cluster's own inference endpoint.
+  tags:
+    - Python
+    - AI
+    - Security
+  language: Python
+  projectType: Python
+
+projects:
+  - name: ice-demo
+    git:
+      remotes:
+        origin: https://github.com/maxisses/ice-demo.git
+      checkoutFrom:
+        revision: main
+
+components:
+  - name: ai-dev
+    container:
+      image: registry.redhat.io/devspaces/udi-rhel9:latest
+      memoryRequest: 1Gi
+      memoryLimit: 6Gi
+      cpuRequest: 200m
+      cpuLimit: 2000m
+      mountSources: true
+      env:
+        - name: ICE_DEMO_NAMESPACE
+          value: md-ice-demo-part1
+        # OPENAI_BASE_URL, OPENAI_API_KEY and AI_MODEL are not here on purpose.
+        # They come from the ice-demo-ai secret in your own namespace, which
+        # Dev Spaces mounts because it is labelled mount-to-devworkspace.
+        - name: NPM_CONFIG_PREFIX
+          value: /home/user/.npm-global
+        - name: PATH
+          value: /home/user/.npm-global/bin:/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+      volumeMounts:
+        - name: tool-cache
+          path: /home/user/.npm-global
+  - name: tool-cache
+    volume:
+      size: 3Gi
+
+commands:
+  - id: install-ai-tooling
+    exec:
+      label: "1. Install the scanner and the coding agent"
+      component: ai-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ./ai/install.sh
+      group:
+        kind: build
+        isDefault: true
+
+  - id: scan-dependencies
+    exec:
+      label: "2. Scan the dependencies for known vulnerabilities"
+      component: ai-dev
+      workingDir: ${PROJECT_SOURCE}/components/location-extractor
+      commandLine: python3.11 -m pip_audit -r requirements.txt --progress-spinner off
+      group:
+        kind: test
+        isDefault: true
+
+  - id: ai-dependency-review
+    exec:
+      label: "3. Ask the model what to do about them"
+      component: ai-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: python3.11 ai/dependency-review.py
+      group:
+        kind: run
+        isDefault: true
+
+  - id: coding-agent
+    exec:
+      label: "4. Open the coding agent"
+      component: ai-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ./ai/agent.sh
+      group:
+        kind: run

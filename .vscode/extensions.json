@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "redhat.fabric8-analytics",
+    "ms-python.python",
+    "redhat.vscode-yaml",
+    "redhat.vscode-openshift-connector"
+  ]
+}
