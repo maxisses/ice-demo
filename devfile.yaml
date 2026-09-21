@@ -50,9 +50,17 @@ components:
         - name: PIP_CACHE_DIR
           value: /home/user/.cache/pip
       volumeMounts:
-        - name: tool-cache
+        # Only /projects is persisted by default, so anything the install
+        # command puts in the home directory is gone after a restart. These
+        # two keep the scanner and the agent where we left them.
+        - name: npm-tools
           path: /home/user/.npm-global
-  - name: tool-cache
+        - name: python-tools
+          path: /home/user/.local
+  - name: npm-tools
+    volume:
+      size: 2Gi
+  - name: python-tools
     volume:
       size: 3Gi
 

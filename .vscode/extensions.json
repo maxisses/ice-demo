@@ -1,8 +1,8 @@
 {
+  "//": "Deliberately short. The OpenShift Toolkit extension was in here and had to go: it does full API discovery against a cluster with several hundred CRDs, gets client-side throttled into 20 second waits, and blocks the extension host - which is what creates terminals. We use oc in the terminal and the web console instead.",
   "recommendations": [
     "redhat.fabric8-analytics",
     "ms-python.python",
-    "redhat.vscode-yaml",
-    "redhat.vscode-openshift-connector"
+    "redhat.vscode-yaml"
   ]
 }

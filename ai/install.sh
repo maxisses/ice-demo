@@ -15,14 +15,9 @@ echo "--> opencode (a coding agent that speaks any OpenAI-compatible endpoint)"
 mkdir -p "${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 npm install -g --silent opencode-ai 2>&1 | tail -3
 
-# npm -g installs into NPM_CONFIG_PREFIX, which is not on the default PATH.
-# We append rather than override, so nothing the image set up gets lost.
-BIN="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}/bin"
-if ! grep -q "${BIN}" "${HOME}/.bashrc" 2>/dev/null; then
-  echo "export PATH=\"${BIN}:\$HOME/.local/bin:\$PATH\"" >> "${HOME}/.bashrc"
-  echo "--> added ${BIN} to ~/.bashrc"
-fi
-export PATH="${BIN}:${HOME}/.local/bin:${PATH}"
+# No PATH juggling needed: the UDI already has ~/.local/bin and
+# ~/.npm-global/bin on PATH, and both are backed by volumes in the devfile, so
+# what we install here is still here after a restart.
 
 echo
 echo "Ready:"

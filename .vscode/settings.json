@@ -1,0 +1,23 @@
+{
+  // The Python extension injects environment activation into every new
+  // terminal. Its environment locator is broken in this image (the bundled
+  // 'pet' binary is missing), so activation can stall a fresh terminal at a
+  // blinking cursor. We use python3.11 explicitly everywhere, so we do not
+  // need it.
+  "python.terminal.activateEnvironment": false,
+  "python.defaultInterpreterPath": "/usr/bin/python3.11",
+  "python.terminal.activateEnvInCurrentTerminal": false,
+
+  // Start terminals in a plain login shell, without the shell-integration
+  // injection that has to negotiate with the extension host first.
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "/bin/bash",
+      "args": ["-l"]
+    }
+  },
+
+  "git.autofetch": false,
+  "git.confirmSync": false
+}
