@@ -12,6 +12,12 @@ set -euo pipefail
 : "${OPENAI_API_KEY:?not set - is the ice-demo-ai secret mounted?}"
 MODEL="${AI_MODEL:-deepseek-r1-distill-qwen-14b}"
 
+# opencode asks for 32000 output tokens by default. This model tops out at a
+# 16384 token total, so without these limits every request is rejected before
+# it reaches the GPU.
+CONTEXT="${AI_CONTEXT_TOKENS:-16384}"
+OUTPUT="${AI_OUTPUT_TOKENS:-6000}"
+
 CONFIG_DIR="${HOME}/.config/opencode"
 mkdir -p "${CONFIG_DIR}"
 
@@ -27,7 +33,10 @@ cat > "${CONFIG_DIR}/opencode.json" <<JSON
         "apiKey": "${OPENAI_API_KEY}"
       },
       "models": {
-        "${MODEL}": { "name": "${MODEL}" }
+        "${MODEL}": {
+          "name": "${MODEL}",
+          "limit": { "context": ${CONTEXT}, "output": ${OUTPUT} }
+        }
       }
     }
   },
