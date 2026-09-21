@@ -1,11 +1,15 @@
 schemaVersion: 2.2.2
 metadata:
   name: ice-demo
-  displayName: ICE Demo - LocalNews Location Extractor
-  description: Python workspace for the location-extractor microservice
+  displayName: ICE Demo - LocalNews
+  description: >-
+    One workspace for the whole demo. Edit the location-extractor, run its
+    tests, push and watch the Tekton pipeline pick it up - and scan the
+    dependencies with a model that runs on this cluster.
   tags:
     - Python
-    - Flask
+    - AI
+    - Security
     - OpenShift
   language: Python
   projectType: Python
@@ -19,10 +23,10 @@ projects:
         revision: main
 
 components:
-  - name: python-dev
+  - name: dev
     container:
-      # Red Hat Universal Developer Image: python, node, java and go, plus
-      # oc, tkn, helm and kubectl already on the PATH.
+      # Red Hat Universal Developer Image: python 3.9 and 3.11, node 22, plus
+      # oc, tkn and git already on the PATH.
       image: registry.redhat.io/devspaces/udi-rhel9:latest
       memoryRequest: 1Gi
       memoryLimit: 6Gi
@@ -37,26 +41,28 @@ components:
       env:
         - name: ICE_DEMO_NAMESPACE
           value: md-ice-demo-part1
+        # Where npm -g puts things. We deliberately do NOT override PATH here:
+        # replacing it costs you /usr/sbin and whatever the image's own
+        # entrypoint prepends, and a half-built PATH is a miserable thing to
+        # debug in a terminal. ai/install.sh appends to ~/.bashrc instead.
+        - name: NPM_CONFIG_PREFIX
+          value: /home/user/.npm-global
         - name: PIP_CACHE_DIR
           value: /home/user/.cache/pip
       volumeMounts:
-        - name: pip-cache
-          path: /home/user/.cache/pip
-  - name: pip-cache
+        - name: tool-cache
+          path: /home/user/.npm-global
+  - name: tool-cache
     volume:
-      size: 2Gi
+      size: 3Gi
 
 commands:
-  - id: install-deps
+  - id: install-tooling
     exec:
-      label: "1. Install Python dependencies"
-      component: python-dev
-      workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      # The image we ship runs 3.12; the UDI carries 3.9 and 3.11, so we pin
-      # the newer one here rather than letting 'python' pick 3.9.
-      commandLine: |
-        python3.11 -m pip install --user -r requirements-dev.txt
-        python3.11 -m spacy download en_core_web_md
+      label: "1. Install dependencies, the scanner and the coding agent"
+      component: dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ./ai/install.sh
       group:
         kind: build
         isDefault: true
@@ -64,27 +70,54 @@ commands:
   - id: run-tests
     exec:
       label: "2. Run the unit tests"
-      component: python-dev
+      component: dev
       workingDir: ${PROJECT_SOURCE}/components/location-extractor
       commandLine: python3.11 -m pytest test -v
       group:
         kind: test
         isDefault: true
 
-  - id: run-dev
+  - id: scan-dependencies
     exec:
-      label: "3. Run the location-extractor locally"
-      component: python-dev
-      workingDir: ${PROJECT_SOURCE}/components/location-extractor
-      commandLine: python3.11 -m src.server
+      label: "3. Scan the dependencies for known vulnerabilities"
+      component: dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: python3.11 -m pip_audit -r ai/demo-requirements.txt --progress-spinner off
+      group:
+        kind: test
+
+  - id: ai-dependency-review
+    exec:
+      label: "4. Ask the model what to do about them"
+      component: dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: python3.11 ai/dependency-review.py ai/demo-requirements.txt
       group:
         kind: run
         isDefault: true
 
-  - id: setup-pipeline-trigger
+  - id: coding-agent
     exec:
-      label: "4. Re-arm the git hook that starts the Tekton pipeline"
-      component: python-dev
+      label: "5. Open the coding agent"
+      component: dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ./ai/agent.sh
+      group:
+        kind: run
+
+  - id: run-dev
+    exec:
+      label: "6. Run the location-extractor locally"
+      component: dev
+      workingDir: ${PROJECT_SOURCE}/components/location-extractor
+      commandLine: python3.11 -m src.server
+      group:
+        kind: run
+
+  - id: setup-git-and-trigger
+    exec:
+      label: "7. Re-arm git and the pipeline trigger"
+      component: dev
       workingDir: ${PROJECT_SOURCE}
       commandLine: ./hack/setup-pipeline-trigger.sh
       group:
@@ -92,13 +125,15 @@ commands:
 
   - id: sync-with-pipeline
     exec:
-      label: "5. Pull the tag commit the pipeline pushed"
-      component: python-dev
+      label: "8. Pull the tag commit the pipeline pushed"
+      component: dev
       workingDir: ${PROJECT_SOURCE}
       commandLine: git pull --rebase origin main
       group:
         kind: run
 
 events:
+  # Sets git up so you can actually commit and push: identity, the deploy key,
+  # the ssh remote, and the hook that starts the pipeline. Non-fatal by design.
   postStart:
-    - setup-pipeline-trigger
+    - setup-git-and-trigger

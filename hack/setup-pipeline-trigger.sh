@@ -16,6 +16,12 @@ install -m 0755 "${REPO_ROOT}/hack/pre-push" "${REPO_ROOT}/.git/hooks/pre-push" 
   exit 0
 }
 
+# Identity first. Without these two, git refuses to commit at all - and it
+# fails at commit time, not now, which is a rotten thing to discover on stage.
+git -C "${REPO_ROOT}" config user.name  "${GIT_AUTHOR_NAME:-Max Dargatz}"
+git -C "${REPO_ROOT}" config user.email "${GIT_AUTHOR_EMAIL:-max.dargatz@mailbox.org}"
+echo "git identity: $(git -C "${REPO_ROOT}" config user.name) <$(git -C "${REPO_ROOT}" config user.email)>"
+
 # Dev Spaces mounts secrets read-only and world-readable; ssh refuses to touch
 # a private key like that, so we take a copy with the permissions it wants.
 MOUNTED_KEY="/home/user/.ssh-mounted/id_ed25519"
@@ -31,9 +37,10 @@ SSHCFG
   chmod 600 "${HOME}/.ssh/config"
   # The project is cloned over https, which is read-only for us.
   git -C "${REPO_ROOT}" remote set-url origin git@github.com:maxisses/ice-demo.git
-  git -C "${REPO_ROOT}" config user.name  "${GIT_AUTHOR_NAME:-Max Dargatz}"
-  git -C "${REPO_ROOT}" config user.email "${GIT_AUTHOR_EMAIL:-max.dargatz@mailbox.org}"
-  echo "pipeline trigger: git remote switched to ssh, you can push from here"
+  echo "git remote: switched to ssh, you can push from here"
+else
+  echo "git remote: no deploy key mounted, origin stays read-only https."
+  echo "            run hack/create-git-ssh-secret.sh and restart the workspace."
 fi
 
 if [ -n "${ICE_DEMO_WEBHOOK_URL:-}" ] && [ -n "${ICE_DEMO_WEBHOOK_SECRET:-}" ]; then
