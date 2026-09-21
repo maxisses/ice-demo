@@ -1,0 +1,19 @@
+# Patch for the existing CheCluster in openshift-devspaces. Apply with:
+#   oc patch checluster devspaces -n openshift-devspaces \
+#     --type=merge --patch-file cluster/10-devspaces-tuning.patch.yaml
+#
+# Two changes, both learned the hard way:
+#
+# startTimeoutSeconds: the default 300 is not enough here. The per-user PVC
+# lives on NetApp SAN with Immediate binding, and the UDI image is 1.5 GB, so a
+# cold start regularly needs more than five minutes.
+#
+# secondsOfInactivityBeforeIdling: the default 1800 puts the workspace to sleep
+# after half an hour. That is shorter than a conference talk.
+spec:
+  devEnvironments:
+    startTimeoutSeconds: 900
+    secondsOfInactivityBeforeIdling: 14400
+    ignoredUnrecoverableEvents:
+      - FailedScheduling
+      - FailedMount

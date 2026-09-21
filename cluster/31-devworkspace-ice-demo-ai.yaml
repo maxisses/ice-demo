@@ -1,0 +1,86 @@
+# The AI workspace, as applied with oc. Mirrors devfile-ai.yaml.
+#
+# Factory URL for the dashboard route:
+#   https://devspaces.apps.ocp4.stormshift.coe.muc.redhat.com/#https://github.com/maxisses/ice-demo?df=devfile-ai.yaml
+#
+# Needs the che-code DevWorkspaceTemplate, and the ice-demo-ai secret for the
+# model credentials - see hack/create-ai-secret.sh.
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: ice-demo-ai
+  namespace: mdargatz-redhat-com-admin-devspaces-cyub7k
+spec:
+  started: true
+  contributions:
+  - kubernetes:
+      name: che-code
+    name: editor
+  routingClass: che
+  template:
+    commands:
+    - exec:
+        commandLine: ./ai/install.sh
+        component: ai-dev
+        group:
+          isDefault: true
+          kind: build
+        label: 1. Install the scanner and the coding agent
+        workingDir: ${PROJECT_SOURCE}
+      id: install-ai-tooling
+    - exec:
+        commandLine: python3.11 -m pip_audit -r requirements.txt --progress-spinner off
+        component: ai-dev
+        group:
+          isDefault: true
+          kind: test
+        label: 2. Scan the dependencies for known vulnerabilities
+        workingDir: ${PROJECT_SOURCE}/components/location-extractor
+      id: scan-dependencies
+    - exec:
+        commandLine: python3.11 ai/dependency-review.py
+        component: ai-dev
+        group:
+          isDefault: true
+          kind: run
+        label: 3. Ask the model what to do about them
+        workingDir: ${PROJECT_SOURCE}
+      id: ai-dependency-review
+    - exec:
+        commandLine: ./ai/agent.sh
+        component: ai-dev
+        group:
+          kind: run
+        label: 4. Open the coding agent
+        workingDir: ${PROJECT_SOURCE}
+      id: coding-agent
+    components:
+    - container:
+        cpuLimit: 2000m
+        cpuRequest: 200m
+        env:
+        - name: ICE_DEMO_NAMESPACE
+          value: md-ice-demo-part1
+        - name: NPM_CONFIG_PREFIX
+          value: /home/user/.npm-global
+        - name: PATH
+          value: /home/user/.npm-global/bin:/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+        image: registry.redhat.io/devspaces/udi-rhel9:latest
+        memoryLimit: 6Gi
+        memoryRequest: 1Gi
+        mountSources: true
+        sourceMapping: /projects
+        volumeMounts:
+        - name: tool-cache
+          path: /home/user/.npm-global
+      name: ai-dev
+    - name: tool-cache
+      volume:
+        size: 3Gi
+    projects:
+    - git:
+        checkoutFrom:
+          revision: main
+        remotes:
+          origin: https://github.com/maxisses/ice-demo.git
+      name: ice-demo

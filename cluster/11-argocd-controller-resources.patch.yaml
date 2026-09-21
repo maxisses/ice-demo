@@ -1,0 +1,16 @@
+# Patch for the ArgoCD CR in openshift-gitops. Apply with:
+#   oc patch argocd openshift-gitops -n openshift-gitops \
+#     --type=merge --patch-file cluster/11-argocd-controller-resources.patch.yaml
+#
+# The application controller ships with a 2 GiB limit. On this cluster - 141
+# projects and several hundred CRDs - it was OOMKilled in a loop while building
+# its resource cache, so no Argo CD application anywhere could sync.
+spec:
+  controller:
+    resources:
+      limits:
+        cpu: "4"
+        memory: 6Gi
+      requests:
+        cpu: 500m
+        memory: 2Gi

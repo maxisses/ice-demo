@@ -1,0 +1,18 @@
+# Patch for the news-operator-helm Subscription in max-localnewsapp:
+#   oc patch subscriptions.operators.coreos.com news-operator-helm \
+#     -n max-localnewsapp --type=merge \
+#     --patch-file cluster/12-localnews-operator-resources.patch.yaml
+#
+# Same story as Argo CD: the operator's manager container had a 512 MiB limit
+# and was OOMKilled during API discovery - 10,445 restarts over 48 days. The
+# resources go on the Subscription rather than the Deployment, because OLM owns
+# the Deployment and would revert a direct patch.
+spec:
+  config:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 2Gi
+      requests:
+        cpu: 100m
+        memory: 256Mi

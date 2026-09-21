@@ -1,0 +1,8 @@
+# The demo namespace. The label is what lets the cluster-wide Argo CD instance
+# in openshift-gitops deploy into it - without it every sync fails on RBAC.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: md-ice-demo-part1
+  labels:
+    argocd.argoproj.io/managed-by: openshift-gitops
