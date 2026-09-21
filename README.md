@@ -37,6 +37,8 @@ components/location-extractor/   the Python service we build on stage
   Containerfile                  what the pipeline builds (seconds)
   Containerfile.base             spaCy + language model (minutes, built once)
 devfile.yaml                     the Dev Spaces workspace
+devfile-ai.yaml                  the AI workspace (scanner + coding agent)
+ai/                              dependency review script and agent config
 hack/                            the git hook that fires the pipeline
 tekton/                          tasks, both pipelines, the webhook receiver
 gitops/helm/                     the Helm chart Argo CD deploys
@@ -156,6 +158,50 @@ tkn pipeline start build-base-image -n md-ice-demo-part1 \
   --serviceaccount pipeline --showlog
 ```
 
+## The second workspace: a model that reads your dependencies
+
+`devfile-ai.yaml` starts a second workspace, `ice-demo-ai`, on the same repo.
+It is the bridge into part three of the talk: the same application lifecycle,
+but with a model helping, and the model runs on OpenShift AI rather than
+somewhere in California.
+
+Factory URL:
+
+```
+https://devspaces.apps.ocp4.stormshift.coe.muc.redhat.com/#https://github.com/maxisses/ice-demo?df=devfile-ai.yaml
+```
+
+Four commands, in order:
+
+1. **Install the scanner and the coding agent** - `pip-audit` and `opencode`.
+2. **Scan the dependencies.** This is not a canned result. As of today
+   `pip-audit` finds two real advisories against the Flask version we pin,
+   PYSEC-2026-1377 and PYSEC-2026-2151.
+3. **Ask the model what to do about them.** `ai/dependency-review.py` hands
+   the findings and the requirements file to `deepseek-r1-distill-qwen-14b`
+   and prints two things: the answer, and the model's own reasoning on the way
+   there. Worth showing - it works out that 3.1.3 covers both advisories so
+   you only need one bump, and it says so.
+4. **Open the coding agent.** `opencode` in the terminal, wired to the same
+   endpoint, with the repo as its working directory. Ask it to explain
+   `src/geocode.py` and it reads the file first.
+
+Two details worth knowing. The model is DeepSeek-R1, which thinks out loud: the
+answer arrives in `content` and the thinking in `reasoning_content`, and if you
+give it too few tokens you get the thinking and an empty answer. And opencode
+asks for 32,000 output tokens by default while this model serves 16,384 in
+total, so `ai/agent.sh` pins the limits - without that every request is
+rejected before it reaches a GPU.
+
+The editor also picks up `.vscode/extensions.json`, which asks for Red Hat
+Dependency Analytics. That flags vulnerable dependencies inline while you type,
+so you can show the same finding twice: once as a squiggle in the editor, once
+as a scan in the terminal.
+
+Credentials come from an `ice-demo-ai` secret in your Dev Spaces namespace,
+mounted as `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `AI_MODEL`. Nothing is baked
+into the devfile.
+
 ## The feeds, and why /news looks empty
 
 `/news` takes a bounding box and returns nothing without one. That is not a
@@ -260,6 +306,10 @@ generating a new pair, replacing the GitHub deploy key, and updating the secret.
 **The workspace fails with "0/6 nodes are available: pod has unbound immediate
 PersistentVolumeClaims".** The per-user PVC is still being provisioned. Start
 the workspace again; the second attempt works.
+
+**The second workspace will not schedule.** Both workspaces share one per-user
+PVC and the storage class is ReadWriteOnce, so they have to land on the same
+node. They did here, but if one refuses to start, stop the other one first.
 
 **The pipeline does not start after a push.** The hook only fires on `main`,
 and it needs `ICE_DEMO_WEBHOOK_URL` and `ICE_DEMO_WEBHOOK_SECRET` in the
