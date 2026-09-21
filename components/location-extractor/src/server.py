@@ -15,7 +15,7 @@ from prometheus_client import Counter, Info, generate_latest
 from src import geocode as geo
 
 # --- the bit we change live on stage -----------------------------------
-GREETING = "Flask 3.1.3 - der Fix kam vom Modell im Cluster"
+GREETING = "Hello from the ICE demo - built on OpenShift"
 # -----------------------------------------------------------------------
 
 VERSION = os.getenv("LOC_EXT_VERSION", "dev")
