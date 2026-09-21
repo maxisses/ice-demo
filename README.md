@@ -16,6 +16,10 @@ in PostGIS, a Python service pulls place names out of the headlines with spaCy, 
 Angular frontend paints them on a map. We only build one of those five components in the
 pipeline — the Python one — because that keeps the loop short enough to watch on stage.
 
+There is a shorter, security-focused version of this demo in
+[DEMO-GUIDE.md](DEMO-GUIDE.md) - five minutes, built around supply chain,
+drift and Lightspeed.
+
 ## Where everything lives
 
 | Thing | Where |
@@ -39,6 +43,8 @@ components/location-extractor/   the Python service we build on stage
 devfile.yaml                     the Dev Spaces workspace
 devfile-ai.yaml                  the AI workspace (scanner + coding agent)
 ai/                              dependency review script and agent config
+cluster/                         namespace, operator patches, Lightspeed, workspaces
+hack/bootstrap.sh                rebuilds all of it on a fresh cluster
 hack/                            the git hook that fires the pipeline
 tekton/                          tasks, both pipelines, the webhook receiver
 gitops/helm/                     the Helm chart Argo CD deploys
@@ -277,6 +283,35 @@ Two things that bite on a first start and are worth knowing before you go live:
   immediate PersistentVolumeClaims"*. Starting it a second time works. `startTimeoutSeconds` is
   up from 300 to 900 to give the pull of the 1.5 GB UDI image room as well.
 - Keep a stopped workspace around rather than deleting it, and the PVC stays bound.
+
+## Rebuilding this from scratch
+
+Everything the cluster needs is in `cluster/` and `hack/`, except the four
+secrets, which are yours to supply:
+
+```bash
+export QUAY_USER='mdargatz+admin' QUAY_TOKEN='...'
+export GIT_DEPLOY_KEY=~/path/to/ice-demo-deploy-key
+export MAAS_BASE_URL='https://maas-rhdp.apps.maas.redhatworkshops.io/v1'
+export MAAS_API_KEY='...'
+./hack/bootstrap.sh
+```
+
+It creates the namespace, the secrets, the Tekton resources, the Argo CD
+project and application, the editor template, the two workspaces and their
+mounted secrets. It does not install operators, and it does not build the base
+image - it prints the `tkn` command for that at the end, because the first
+build has to finish before the first CI run can start.
+
+The three files ending in `.patch.yaml` are not applied by the bootstrap. They
+change resources that belong to the cluster rather than to this demo - the
+CheCluster, the ArgoCD CR, and the localnews operator's Subscription - so they
+are there to be read and applied deliberately:
+
+```bash
+oc patch argocd openshift-gitops -n openshift-gitops \
+  --type=merge --patch-file cluster/11-argocd-controller-resources.patch.yaml
+```
 
 ## Secrets in the namespace
 
