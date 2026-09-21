@@ -39,12 +39,16 @@ feedScraper:
   replicaCount: 1
   image: quay.io/k8snativedev/feed-scraper
   imageTag: openshift
+  # Feeds are picked for two reasons. They have to be alive - the BBC feed the
+  # book used only answers over https now, and the CNBC one is gone - and their
+  # article links have to fit the backend's varchar(256) column. Times of India
+  # links run to 292 characters and blow the insert up.
   feedsUrl: >-
-    http://feeds.bbci.co.uk/news/world/rss.xml,
+    https://feeds.bbci.co.uk/news/world/rss.xml,
     https://www.aljazeera.com/xml/rss/all.xml,
-    https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/world/rss.xml,
-    https://timesofindia.indiatimes.com/rssfeeds/296589292.cms,
-    https://www.cnbc.com/id/100727362/device/rss/rss.html
+    https://www.theguardian.com/world/rss,
+    https://rss.dw.com/rdf/rss-en-world,
+    https://www.france24.com/en/rss
 
 # No Red Hat image ships the PostGIS extension, so we pin the upstream one.
 postgis:
