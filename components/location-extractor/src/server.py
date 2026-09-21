@@ -15,7 +15,7 @@ from prometheus_client import Counter, Info, generate_latest
 from src import geocode as geo
 
 # --- the bit we change live on stage -----------------------------------
-GREETING = "Das Eis ist immer da - gebaut im DevSpaces-Workspace"
+GREETING = "Flask 3.1.3 - der Fix kam vom Modell im Cluster"
 # -----------------------------------------------------------------------
 
 VERSION = os.getenv("LOC_EXT_VERSION", "dev")
