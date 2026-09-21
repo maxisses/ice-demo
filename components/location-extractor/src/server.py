@@ -15,7 +15,7 @@ from prometheus_client import Counter, Info, generate_latest
 from src import geocode as geo
 
 # --- the bit we change live on stage -----------------------------------
-GREETING = "Hello from the ICE demo - built on OpenShift"
+GREETING = "Gruesse aus dem DevSpaces-Workspace - live gebaut auf OpenShift"
 # -----------------------------------------------------------------------
 
 VERSION = os.getenv("LOC_EXT_VERSION", "dev")
