@@ -156,6 +156,24 @@ tkn pipeline start build-base-image -n md-ice-demo-part1 \
   --serviceaccount pipeline --showlog
 ```
 
+## The feeds, and why /news looks empty
+
+`/news` takes a bounding box and returns nothing without one. That is not a
+bug - the frontend passes whatever the map is currently showing. To check the
+data from a terminal, ask for the whole world:
+
+```bash
+curl -s "https://news-backend-md-ice-demo-part1.apps.ocp4.stormshift.coe.muc.redhat.com/news?sw.lat=-85&sw.lng=-180&ne.lat=85&ne.lng=180" | jq length
+```
+
+The feed list in `values.yaml` is not the one from the book. Three of those
+feeds are dead or moved: the BBC one only answers over https now, CNBC's is
+gone, and the NYT url has a second `https://` nested inside its path. One more
+had to go for a subtler reason - Times of India article links run to 292
+characters, and the backend stores `link` in a `varchar(256)`, so every insert
+failed with *"value too long for type character varying(256)"* and the map
+stayed empty. BBC, Al Jazeera, the Guardian, DW and France24 all fit.
+
 ## Why the geocoding is offline
 
 The version of this service in the book asks Nominatim, the public
@@ -235,3 +253,28 @@ your current project.
 
 The SSH key is a deploy key scoped to this repository with write access. Rotate it by
 generating a new pair, replacing the GitHub deploy key, and updating the secret.
+
+
+## When something goes wrong on stage
+
+**The workspace fails with "0/6 nodes are available: pod has unbound immediate
+PersistentVolumeClaims".** The per-user PVC is still being provisioned. Start
+the workspace again; the second attempt works.
+
+**The pipeline does not start after a push.** The hook only fires on `main`,
+and it needs `ICE_DEMO_WEBHOOK_URL` and `ICE_DEMO_WEBHOOK_SECRET` in the
+workspace. Run command **4. Re-arm the git hook** and read what it prints. You
+can always start a run by hand from the console or with `tkn`.
+
+**The push is rejected as non-fast-forward.** The pipeline pushed its tag
+commit while you were editing. Run command **5. Pull the tag commit** and push
+again.
+
+**Argo CD still shows the old revision.** Its repo-server caches the commit.
+Use **Hard Refresh**, not plain Refresh.
+
+**The map is empty.** Check `oc logs deploy/news-backend -n md-ice-demo-part1`
+for *"value too long for type character varying(256)"* - a feed has started
+serving links longer than 256 characters and needs to come out of
+`values.yaml`. The database is ephemeral, so restarting `postgis` throws the
+articles away and the scraper refills within a minute or two.
