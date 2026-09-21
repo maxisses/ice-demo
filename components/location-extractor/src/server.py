@@ -1,7 +1,7 @@
 """Location Extractor - the NLP microservice of the LocalNews demo app.
 
 Takes a piece of text, finds the places mentioned in it with spaCy,
-and turns those place names into coordinates with Nominatim.
+and turns those place names into coordinates.
 """
 
 import json
@@ -10,8 +10,9 @@ import random
 
 import spacy
 from flask import Flask, jsonify, request
-from geopy.geocoders import Nominatim
 from prometheus_client import Counter, Info, generate_latest
+
+from src import geocode as geo
 
 # --- the bit we change live on stage -----------------------------------
 GREETING = "Hello from the ICE demo - built on OpenShift"
@@ -19,8 +20,16 @@ GREETING = "Hello from the ICE demo - built on OpenShift"
 
 VERSION = os.getenv("LOC_EXT_VERSION", "dev")
 
+# Two stories about Berlin would otherwise land on the same pixel, so we
+# scatter the markers a little. 0.3 degrees is roughly 30 km - enough to see
+# them apart, small enough to stay in the right city.
+JITTER = 0.3
+
 COUNTER_LOCATIONS_EXTRACTED = Counter(
     "locations_extracted", "Number of extracted locations"
+)
+COUNTER_LOCATIONS_UNKNOWN = Counter(
+    "locations_unknown", "Place names spaCy found but we could not geocode"
 )
 INFO_LOCATION_EXTRACTOR = Info(
     "location_extractor", "Information regarding the location extractor"
@@ -28,6 +37,7 @@ INFO_LOCATION_EXTRACTOR = Info(
 INFO_LOCATION_EXTRACTOR.info({"version": VERSION})
 
 nlp = spacy.load("en_core_web_md")
+geo.warm_up()
 
 app = Flask(__name__)
 
@@ -54,55 +64,56 @@ def get_coords():
     doc = nlp(text)
     print("Analyzing this text: " + doc.text, flush=True)
 
-    locations = [
-        ent.text for ent in doc.ents if ent.label_ in ("GPE", "LOC")
-    ]
+    names = [ent.text for ent in doc.ents if ent.label_ in ("GPE", "LOC")]
 
-    if not locations:
+    if not names:
         print("Not found any location in this text", flush=True)
-        return _fallback(), 200, {"Content-Type": "application/json; charset=utf-8"}
+        return _json(_fallback())
 
-    print("Those entities were recognized as locations: " + str(locations), flush=True)
-    geolocator = Nominatim(user_agent="ice-demo-location-extractor")
-    locs_dict = {}
-    for idx, location in enumerate(locations):
+    print("Those entities were recognized as locations: " + str(names), flush=True)
+
+    found = {}
+    for idx, name in enumerate(names):
         # Hack to simulate a worse-performing model in case of version v2
         if VERSION == "v2-worse-performance" and random.randint(0, 1) == 0:
             continue
-        try:
-            loc = geolocator.geocode(location)
-            locs_dict[idx + 1] = {
-                "extracted location": location,
-                "generated address": loc.address,
-                "latitude": loc.latitude - random.uniform(0.05, 2),
-                "longitude": loc.longitude + random.uniform(0.05, 2),
-            }
-            print("found lat & long for this location: " + str(location), flush=True)
-            COUNTER_LOCATIONS_EXTRACTED.inc(1)
-        except Exception:
-            print("not found lat & long for this location: " + str(location), flush=True)
 
-    if not locs_dict:
-        return _fallback(), 200, {"Content-Type": "application/json; charset=utf-8"}
+        hit = geo.geocode(name)
+        if not hit:
+            print("no coordinates for this location: " + name, flush=True)
+            COUNTER_LOCATIONS_UNKNOWN.inc()
+            continue
 
-    return (
-        json.dumps(locs_dict),
-        200,
-        {"Content-Type": "application/json; charset=utf-8"},
-    )
+        latitude, longitude, address = hit
+        found[idx + 1] = {
+            "extracted location": name,
+            "generated address": address,
+            "latitude": latitude + random.uniform(-JITTER, JITTER),
+            "longitude": longitude + random.uniform(-JITTER, JITTER),
+        }
+        print("found lat & long for this location: " + name, flush=True)
+        COUNTER_LOCATIONS_EXTRACTED.inc()
+
+    return _json(found or _fallback())
 
 
 def _fallback():
     """Nothing recognised - drop a marker somewhere in the ocean."""
-    return json.dumps(
-        {
-            "1": {
-                "extracted location": "none",
-                "generated address": "Brisbane City, Queensland, Australia",
-                "latitude": 0.4689682 - random.uniform(0.1, 5),
-                "longitude": -30.0234991 + random.uniform(0.1, 5),
-            }
+    return {
+        "1": {
+            "extracted location": "none",
+            "generated address": "Brisbane City, Queensland, Australia",
+            "latitude": 0.4689682 - random.uniform(0.1, 5),
+            "longitude": -30.0234991 + random.uniform(0.1, 5),
         }
+    }
+
+
+def _json(payload):
+    return (
+        json.dumps(payload),
+        200,
+        {"Content-Type": "application/json; charset=utf-8"},
     )
 
 
