@@ -311,6 +311,20 @@ the workspace again; the second attempt works.
 PVC and the storage class is ReadWriteOnce, so they have to land on the same
 node. They did here, but if one refuses to start, stop the other one first.
 
+**A workspace fails with "plugin for component editor not found".** The two
+workspaces in this namespace were created with `oc`, so they point at a
+`DevWorkspaceTemplate` called `che-code` that has to exist alongside them.
+Workspaces you open through the Dev Spaces dashboard resolve their own editor
+and do not need it. To recreate it:
+
+```bash
+oc get cm editors-definitions -n openshift-devspaces \
+  -o jsonpath='{.data.che-code\.yaml}' > /tmp/che-code.yaml
+```
+
+then wrap its `components`, `commands` and `events` into a
+`DevWorkspaceTemplate` named `che-code` in your Dev Spaces namespace.
+
 **The pipeline does not start after a push.** The hook only fires on `main`,
 and it needs `ICE_DEMO_WEBHOOK_URL` and `ICE_DEMO_WEBHOOK_SECRET` in the
 workspace. Run command **4. Re-arm the git hook** and read what it prints. You
