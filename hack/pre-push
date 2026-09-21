@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#
+# Tells the Tekton EventListener that a push just happened.
+# Installed by hack/setup-pipeline-trigger.sh - do not edit .git/hooks directly.
+set -euo pipefail
+
+CONF_DIR="${HOME}/.ice-demo"
+URL_FILE="${CONF_DIR}/webhook-url"
+SECRET_FILE="${CONF_DIR}/webhook-secret"
+
+if [ ! -r "${URL_FILE}" ] || [ ! -r "${SECRET_FILE}" ]; then
+  echo "pre-push: no webhook config, skipping pipeline trigger" >&2
+  exit 0
+fi
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "${BRANCH}" != "main" ]; then
+  echo "pre-push: on '${BRANCH}', pipeline only runs for main" >&2
+  exit 0
+fi
+
+WEBHOOK_URL="$(cat "${URL_FILE}")"
+SECRET="$(cat "${SECRET_FILE}")"
+SHA="$(git rev-parse HEAD)"
+MESSAGE="$(git log -1 --pretty=%s)"
+CLONE_URL="https://github.com/maxisses/ice-demo.git"
+
+# The same shape GitHub puts on the wire for a push event.
+PAYLOAD=$(cat <<JSON
+{"ref":"refs/heads/main","after":"${SHA}","head_commit":{"id":"${SHA}","message":$(printf '%s' "${MESSAGE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')},"repository":{"clone_url":"${CLONE_URL}","full_name":"maxisses/ice-demo"}}
+JSON
+)
+
+SIGNATURE="sha256=$(printf '%s' "${PAYLOAD}" \
+  | openssl dgst -sha256 -hmac "${SECRET}" -r | cut -d' ' -f1)"
+
+echo "pre-push: starting the pipeline for ${SHA:0:7}"
+
+# The push has not landed yet at this point, so give the pipeline's git-clone
+# a moment - it runs against the remote, not against this working copy.
+(
+  sleep 5
+  curl -sS -X POST "${WEBHOOK_URL}" \
+    -H "Content-Type: application/json" \
+    -H "X-GitHub-Event: push" \
+    -H "X-GitHub-Delivery: $(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)" \
+    -H "X-Hub-Signature-256: ${SIGNATURE}" \
+    -d "${PAYLOAD}" >/dev/null || true
+) &
+
+exit 0

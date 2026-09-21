@@ -1,0 +1,12 @@
+# The image the pipeline builds on every commit.
+# Dependencies come from the base image, so this build is a few seconds.
+FROM quay.io/mdargatz/icedemo:base
+
+WORKDIR /opt/app-root/src
+
+COPY --chown=1001:0 src/ /opt/app-root/src/src/
+
+USER 1001
+EXPOSE 5000
+
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "src.wsgi:app"]

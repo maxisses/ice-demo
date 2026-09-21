@@ -1,0 +1,74 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-base-image
+  namespace: md-ice-demo-part1
+  labels:
+    app.kubernetes.io/part-of: ice-demo
+spec:
+  description: >-
+    Builds the dependency base image (spaCy + language model). Slow, but it only
+    has to run when requirements.txt changes - not on every commit.
+  params:
+    - name: git-url
+      type: string
+      default: https://github.com/maxisses/ice-demo.git
+    - name: git-revision
+      type: string
+      default: main
+    - name: image
+      type: string
+      default: quay.io/mdargatz/icedemo:base
+  workspaces:
+    - name: shared-workspace
+    - name: dockerconfig
+  tasks:
+    - name: fetch-source
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: URL
+          value: $(params.git-url)
+        - name: REVISION
+          value: $(params.git-revision)
+        - name: DELETE_EXISTING
+          value: "true"
+        - name: SUBDIRECTORY
+          value: ice-demo
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    - name: build-base
+      runAfter:
+        - fetch-source
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildah
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: IMAGE
+          value: $(params.image)
+        - name: DOCKERFILE
+          value: Containerfile.base
+        - name: CONTEXT
+          value: ice-demo/components/location-extractor
+        - name: TLS_VERIFY
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: dockerconfig

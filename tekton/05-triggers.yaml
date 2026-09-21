@@ -1,0 +1,161 @@
+# Tekton Triggers: a webhook receiver that turns a git push into a PipelineRun.
+#
+# The EventListener speaks the GitHub webhook protocol, signature check included.
+# This cluster sits in a lab that GitHub cannot reach, so the push notification
+# comes from the developer's own machine - the `pre-push` hook in the Dev Spaces
+# workspace posts the same payload GitHub would send. Point a real GitHub webhook
+# at the route below and nothing here has to change.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ice-demo-trigger
+  namespace: md-ice-demo-part1
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ice-demo-trigger
+  namespace: md-ice-demo-part1
+rules:
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["eventlisteners", "triggerbindings", "triggertemplates", "triggers", "interceptors", "clusterinterceptors", "clustertriggerbindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "taskruns"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ice-demo-trigger
+  namespace: md-ice-demo-part1
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ice-demo-trigger
+subjects:
+  - kind: ServiceAccount
+    name: ice-demo-trigger
+    namespace: md-ice-demo-part1
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ice-demo-trigger-clusterinterceptors
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-clusterroles
+subjects:
+  - kind: ServiceAccount
+    name: ice-demo-trigger
+    namespace: md-ice-demo-part1
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: ice-demo-push
+  namespace: md-ice-demo-part1
+spec:
+  params:
+    - name: git-revision
+      value: $(body.after)
+    - name: git-url
+      value: $(body.repository.clone_url)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: ice-demo-ci
+  namespace: md-ice-demo-part1
+spec:
+  params:
+    - name: git-revision
+    - name: git-url
+      default: https://github.com/maxisses/ice-demo.git
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: localnews-ci-
+        namespace: md-ice-demo-part1
+        labels:
+          app.kubernetes.io/part-of: ice-demo
+          tekton.dev/pipeline: localnews-ci
+      spec:
+        pipelineRef:
+          name: localnews-ci
+        taskRunTemplate:
+          serviceAccountName: pipeline
+        timeouts:
+          pipeline: 30m
+        params:
+          - name: git-url
+            value: $(tt.params.git-url)
+          - name: git-revision
+            value: $(tt.params.git-revision)
+        workspaces:
+          - name: shared-workspace
+            persistentVolumeClaim:
+              claimName: ice-demo-workspace
+          - name: dockerconfig
+            secret:
+              secretName: quay-push-secret
+          - name: git-ssh
+            secret:
+              secretName: git-push-ssh
+              defaultMode: 0400
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: ice-demo
+  namespace: md-ice-demo-part1
+spec:
+  serviceAccountName: ice-demo-trigger
+  triggers:
+    - name: push-to-main
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: webhook-secret
+                secretKey: secretToken
+            - name: eventTypes
+              value: ["push"]
+        - ref:
+            name: cel
+          params:
+            # only main, and never the pipeline's own tag-bump commit
+            - name: filter
+              value: >-
+                body.ref == 'refs/heads/main' &&
+                !body.head_commit.message.contains('[skip ci]')
+      bindings:
+        - ref: ice-demo-push
+      template:
+        ref: ice-demo-ci
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ice-demo-webhook
+  namespace: md-ice-demo-part1
+spec:
+  to:
+    kind: Service
+    name: el-ice-demo
+  port:
+    targetPort: http-listener
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

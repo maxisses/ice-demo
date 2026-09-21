@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: localnews
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: ice-demo
+spec:
+  project: icedemo
+  source:
+    repoURL: https://github.com/maxisses/ice-demo.git
+    targetRevision: main
+    path: gitops/helm
+    helm:
+      valueFiles:
+        # the second file is the one the pipeline rewrites on every build
+        - values.yaml
+        - values-image.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: md-ice-demo-part1
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        maxDuration: 3m
+        factor: 2

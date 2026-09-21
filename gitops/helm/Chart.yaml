@@ -1,0 +1,6 @@
+apiVersion: v2
+name: localnews
+description: LocalNews - the demo app for "It is a Container Platform, isn't it?"
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

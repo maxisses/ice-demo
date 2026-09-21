@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: pytest
+  namespace: md-ice-demo-part1
+spec:
+  description: >-
+    Runs the unit tests of the location-extractor inside the very image that
+    carries its dependencies. No extra pip install, no surprises at build time.
+  params:
+    - name: CONTEXT
+      description: Directory of the component to test, relative to the repo root.
+      type: string
+      default: components/location-extractor
+    - name: IMAGE
+      description: Image that already has the dependencies baked in.
+      type: string
+      default: quay.io/mdargatz/icedemo:base
+  workspaces:
+    - name: source
+  steps:
+    - name: run-tests
+      image: $(params.IMAGE)
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        pip install --no-cache-dir --quiet pytest
+        python -m pytest test -v

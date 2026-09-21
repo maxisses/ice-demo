@@ -1,0 +1,17 @@
+# A project of its own, so the demo app is fenced in: it may only come from
+# this one Git repo and may only deploy into this one namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: icedemo
+  namespace: openshift-gitops
+spec:
+  description: "ICE demo - OpenShift as a container platform"
+  sourceRepos:
+    - https://github.com/maxisses/ice-demo.git
+  destinations:
+    - namespace: md-ice-demo-part1
+      server: https://kubernetes.default.svc
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

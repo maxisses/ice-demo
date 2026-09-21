@@ -1,0 +1,20 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: short-sha
+  namespace: md-ice-demo-part1
+spec:
+  description: Turns a full commit SHA into the 7-character tag we push to quay.io.
+  params:
+    - name: COMMIT
+      type: string
+  results:
+    - name: SHORT_SHA
+      description: The first seven characters of the commit SHA.
+  steps:
+    - name: shorten
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf '%s' "$(echo -n '$(params.COMMIT)' | cut -c1-7)" > $(results.SHORT_SHA.path)
