@@ -15,7 +15,7 @@ from prometheus_client import Counter, Info, generate_latest
 from src import geocode as geo
 
 # --- the bit we change live on stage -----------------------------------
-GREETING = "Ein Workspace, ein Push, der Rest laeuft von allein"
+GREETING = "Lets go"
 # -----------------------------------------------------------------------
 
 VERSION = os.getenv("LOC_EXT_VERSION", "dev")
