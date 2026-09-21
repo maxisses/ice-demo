@@ -19,6 +19,13 @@ spec:
       type: string
       default: git@github.com:maxisses/ice-demo.git
     - name: git-revision
+      description: The exact commit we build. The trigger hands us a SHA.
+      type: string
+      default: main
+    - name: git-branch
+      description: >-
+        The branch the image tag is written back to. A commit SHA is not a
+        branch, so the GitOps step cannot reuse git-revision.
       type: string
       default: main
     - name: image
@@ -131,7 +138,7 @@ spec:
           value: |
             set -eu
             rm -rf /tmp/gitops && mkdir -p /tmp/gitops
-            git clone --depth 1 --branch $(params.git-revision) \
+            git clone --depth 1 --branch $(params.git-branch) \
               $(params.git-push-url) /tmp/gitops/repo
             cd /tmp/gitops/repo
 
@@ -151,7 +158,7 @@ spec:
 
             git add gitops/helm/values-image.yaml
             git commit -m "ci: roll location-extractor to $(tasks.image-tag.results.SHORT_SHA) [skip ci]"
-            git push origin $(params.git-revision)
+            git push origin $(params.git-branch)
       workspaces:
         - name: source
           workspace: shared-workspace
