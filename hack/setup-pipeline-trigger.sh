@@ -2,45 +2,48 @@
 #
 # Installs a pre-push hook that notifies the Tekton EventListener.
 #
-# GitHub cannot reach this lab cluster, so the push notification comes from
-# here instead. The payload and the HMAC signature are exactly what GitHub
-# would send, so the EventListener does not know the difference.
-set -euo pipefail
+# This runs as a postStart event, so it must never fail: an exit code other
+# than zero takes the whole workspace down with it.
+set -uo pipefail
 
-NAMESPACE="${ICE_DEMO_NAMESPACE:-md-ice-demo-part1}"
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-CONF_DIR="${HOME}/.ice-demo"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "pipeline trigger: not a git checkout yet, skipping"
+  exit 0
+}
 
-mkdir -p "${CONF_DIR}"
+install -m 0755 "${REPO_ROOT}/hack/pre-push" "${REPO_ROOT}/.git/hooks/pre-push" 2>/dev/null || {
+  echo "pipeline trigger: could not install the hook into .git/hooks"
+  exit 0
+}
 
-echo "--> Looking up the webhook route in ${NAMESPACE}"
-if ! WEBHOOK_HOST=$(oc get route ice-demo-webhook -n "${NAMESPACE}" \
-      -o jsonpath='{.spec.host}' 2>/dev/null) || [ -z "${WEBHOOK_HOST}" ]; then
-  cat >&2 <<MSG
+if [ -n "${ICE_DEMO_WEBHOOK_URL:-}" ] && [ -n "${ICE_DEMO_WEBHOOK_SECRET:-}" ]; then
+  cat <<MSG
 
-  Could not read the webhook route. You are probably not logged in yet.
-  Run this, then start command "4. Arm the git hook" again:
+  Pipeline trigger armed.
+  EventListener: ${ICE_DEMO_WEBHOOK_URL}
 
-      oc login --server=https://api.ocp4.stormshift.coe.muc.redhat.com:6443
+  Every 'git push' to main now starts the localnews-ci pipeline.
 
 MSG
-  exit 1
+else
+  cat <<'MSG'
+
+  The hook is installed but has no webhook config, so pushes will not start
+  the pipeline. The workspace gets ICE_DEMO_WEBHOOK_URL and
+  ICE_DEMO_WEBHOOK_SECRET from a secret in your Dev Spaces namespace. Create
+  it once with:
+
+      ./hack/create-webhook-secret.sh
+
+  and restart the workspace. Until then you can start a run by hand:
+
+      tkn pipeline start localnews-ci -n md-ice-demo-part1 \
+        --workspace name=shared-workspace,claimName=ice-demo-workspace \
+        --workspace name=dockerconfig,secret=quay-push-secret \
+        --workspace name=git-ssh,secret=git-push-ssh \
+        --serviceaccount pipeline --showlog
+
+MSG
 fi
 
-echo "--> Reading the shared webhook secret"
-oc get secret webhook-secret -n "${NAMESPACE}" \
-  -o jsonpath='{.data.secretToken}' | base64 -d > "${CONF_DIR}/webhook-secret"
-chmod 600 "${CONF_DIR}/webhook-secret"
-
-echo "https://${WEBHOOK_HOST}" > "${CONF_DIR}/webhook-url"
-
-install -m 0755 "${REPO_ROOT}/hack/pre-push" "${REPO_ROOT}/.git/hooks/pre-push"
-
-cat <<MSG
-
-  Ready. The hook is armed at .git/hooks/pre-push
-  EventListener: https://${WEBHOOK_HOST}
-
-  From now on every 'git push' to main starts the localnews-ci pipeline.
-
-MSG
+exit 0

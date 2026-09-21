@@ -21,7 +21,7 @@ projects:
 components:
   - name: python-dev
     container:
-      # Red Hat Universal Developer Image: python, node, java, go plus
+      # Red Hat Universal Developer Image: python, node, java and go, plus
       # oc, tkn, helm and kubectl already on the PATH.
       image: registry.redhat.io/devspaces/udi-rhel9:latest
       memoryRequest: 1Gi
@@ -35,10 +35,13 @@ components:
           exposure: public
           protocol: https
       env:
-        - name: PIP_CACHE_DIR
-          value: /home/user/.cache/pip
         - name: ICE_DEMO_NAMESPACE
           value: md-ice-demo-part1
+        - name: PIP_CACHE_DIR
+          value: /home/user/.cache/pip
+      volumeMounts:
+        - name: pip-cache
+          path: /home/user/.cache/pip
   - name: pip-cache
     volume:
       size: 2Gi
@@ -78,7 +81,7 @@ commands:
 
   - id: setup-pipeline-trigger
     exec:
-      label: "4. Arm the git hook that starts the Tekton pipeline"
+      label: "4. Re-arm the git hook that starts the Tekton pipeline"
       component: python-dev
       workingDir: ${PROJECT_SOURCE}
       commandLine: ./hack/setup-pipeline-trigger.sh
