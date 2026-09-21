@@ -4,11 +4,15 @@
 # We build this once and push it to quay.io/mdargatz/icedemo:base, so the
 # pipeline that runs on every commit only has to copy a handful of .py files.
 #
+# It starts from the minimal UBI Python image, which saves around 800 MB over
+# the full one. That matters: the pipeline pulls this image twice on every run,
+# once to run the tests and once as the build base.
+#
 # Rebuild it whenever requirements.txt changes - see README.
 #
 # The UBI Python image already runs as 1001 and has /opt/app-root set up with
 # group-0 permissions, so there is nothing to chown here.
-FROM registry.access.redhat.com/ubi9/python-312:1
+FROM registry.access.redhat.com/ubi9/python-312-minimal:1
 
 WORKDIR /opt/app-root/src
 
