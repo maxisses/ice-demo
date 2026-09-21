@@ -32,10 +32,6 @@ spec:
     - name: shared-workspace
     - name: dockerconfig
     - name: git-ssh
-  results:
-    - name: image
-      description: The image that was built and rolled out.
-      value: $(params.image):$(tasks.tag.results.SHORT_SHA)
   tasks:
     # 1 - get the code the developer just pushed from Dev Spaces
     - name: fetch-source
@@ -62,7 +58,7 @@ spec:
           workspace: shared-workspace
 
     # 2 - the tag we are going to build
-    - name: tag
+    - name: image-tag
       runAfter:
         - fetch-source
       taskRef:
@@ -88,7 +84,7 @@ spec:
     - name: build-image
       runAfter:
         - unit-test
-        - tag
+        - image-tag
       taskRef:
         resolver: cluster
         params:
@@ -100,7 +96,7 @@ spec:
             value: openshift-pipelines
       params:
         - name: IMAGE
-          value: $(params.image):$(tasks.tag.results.SHORT_SHA)
+          value: $(params.image):$(tasks.image-tag.results.SHORT_SHA)
         - name: DOCKERFILE
           value: Containerfile
         - name: CONTEXT
@@ -145,16 +141,16 @@ spec:
             # Argo CD watches the repo and rolls the new tag out - that is the
             # whole GitOps loop in five lines of YAML.
             locationExtractor:
-              imageTag: $(tasks.tag.results.SHORT_SHA)
+              imageTag: $(tasks.image-tag.results.SHORT_SHA)
             VALUES
 
             if git diff --quiet; then
-              echo "values-image.yaml already points at $(tasks.tag.results.SHORT_SHA) - nothing to do"
+              echo "values-image.yaml already points at $(tasks.image-tag.results.SHORT_SHA) - nothing to do"
               exit 0
             fi
 
             git add gitops/helm/values-image.yaml
-            git commit -m "ci: roll location-extractor to $(tasks.tag.results.SHORT_SHA) [skip ci]"
+            git commit -m "ci: roll location-extractor to $(tasks.image-tag.results.SHORT_SHA) [skip ci]"
             git push origin $(params.git-revision)
       workspaces:
         - name: source

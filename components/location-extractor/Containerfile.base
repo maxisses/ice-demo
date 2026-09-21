@@ -1,18 +1,19 @@
 # Dependency base image for the location-extractor.
 #
-# Everything slow lives here: spaCy and its ~40 MB English language model.
+# Everything slow lives here: spaCy and its ~34 MB English language model.
 # We build this once and push it to quay.io/mdargatz/icedemo:base, so the
 # pipeline that runs on every commit only has to copy a handful of .py files.
 #
-# Rebuild it whenever requirements.txt changes:
-#   tkn pipeline start build-base-image -n md-ice-demo-part1
+# Rebuild it whenever requirements.txt changes - see README.
+#
+# The UBI Python image already runs as 1001 and has /opt/app-root set up with
+# group-0 permissions, so there is nothing to chown here.
 FROM registry.access.redhat.com/ubi9/python-312:1
 
 WORKDIR /opt/app-root/src
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
- && python -m spacy download en_core_web_md \
- && chgrp -R 0 /opt/app-root && chmod -R g=u /opt/app-root
+ && python -m spacy download en_core_web_md
 
-USER 1001
+EXPOSE 5000
