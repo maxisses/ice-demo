@@ -62,11 +62,14 @@ Open the workspace from the Dev Spaces dashboard, or go straight to the factory 
 https://devspaces.apps.ocp4.stormshift.coe.muc.redhat.com/#https://github.com/maxisses/ice-demo
 ```
 
-The workspace comes up on the Red Hat Universal Developer Image, which already carries
-python, `oc`, `tkn` and `helm`. Point out that this IDE is a pod: `oc get pods -n <your>-devspaces`.
+The workspace comes up on the Red Hat Universal Developer Image, which carries python 3.9 and
+3.11 plus `oc`, `tkn` and `git`. (No helm - the devfile commands pin `python3.11`, because the
+image we ship runs 3.12 and the UDI's default `python` is 3.9.) Point out that this IDE is a
+pod: `oc get pods -n <your>-devspaces`.
 
-When it has started, run command **4. Arm the git hook** once. It reads the webhook route and
-the shared secret out of the cluster and installs a `pre-push` hook.
+The workspace arms itself on start: a `postStart` event installs the `pre-push` hook, copies
+the mounted deploy key into `~/.ssh` and switches the git remote to SSH. If you ever need to
+redo that by hand, run command **4. Re-arm the git hook**.
 
 ### 2. Change something
 
@@ -87,18 +90,25 @@ git push
 
 ### 3. Pipelines
 
-The push starts `localnews-ci`. Switch to the OpenShift console, Pipelines, and watch the four
-tasks: fetch the source, run pytest, build the image with buildah, push the new tag back into
-Git. It takes about 90 seconds.
+The push starts `localnews-ci`. Switch to the OpenShift console, Pipelines, and watch the five
+tasks: fetch the source, work out the short SHA, run pytest, build the image with buildah, and
+push the new tag back into Git. The whole run takes three and a half minutes, most of it the
+two pulls of the 650 MB base image.
 
 ### 4. GitOps
 
-Open Argo CD. The `localnews` application goes out of sync within three minutes (or hit
-**Refresh** if you don't want to wait), then syncs itself and rolls the new pod out. Prove it
-landed:
+Open Argo CD. Argo polls the repo every three minutes, so either wait or hit **Refresh**.
+Use **Hard Refresh** if it still shows the old revision - the repo-server caches the commit.
+Then it syncs itself and rolls the new pod out. Prove it landed:
 
 ```bash
 curl -s https://location-extractor-md-ice-demo-part1.apps.ocp4.stormshift.coe.muc.redhat.com/ | jq
+```
+
+If you want the map to move too, the same service answers with coordinates:
+
+```bash
+curl -s "https://location-extractor-md-ice-demo-part1.apps.ocp4.stormshift.coe.muc.redhat.com/get_loc?text=The+game+was+played+in+Berlin+and+Denver" | jq
 ```
 
 The greeting you typed in the browser IDE two minutes ago comes back from a container that was
@@ -146,6 +156,24 @@ tkn pipeline start build-base-image -n md-ice-demo-part1 \
   --serviceaccount pipeline --showlog
 ```
 
+## Why the geocoding is offline
+
+The version of this service in the book asks Nominatim, the public
+OpenStreetMap geocoder. That works on a laptop and falls apart on stage.
+Nominatim allows one request per second per IP, every pod in this cluster
+leaves through the same NAT address, and the feed scraper analyses a headline
+every few seconds. We were rate limited within minutes, and every marker landed
+in the Pacific fallback.
+
+So `src/geocode.py` looks places up in a local dataset instead: `geonamescache`
+ships 26,463 cities with coordinates and 252 countries, which we point at their
+capitals. Names collide - there are 28 places called Berlin - so the index is
+built in ascending population order and the biggest one wins. No network call,
+no rate limit, and the same answer every time you run the demo.
+
+Set `LOC_EXT_ONLINE_FALLBACK=true` if you want Nominatim consulted for the names
+the dataset does not know. It is off by default.
+
 ## Images
 
 Everything we build ourselves sits on Red Hat base images: `ubi9/python-312` for the
@@ -170,8 +198,21 @@ Three things had to be fixed on ocp4 before this worked:
    called `tekton-config-defaults` from an interrupted upgrade. Tekton itself kept running, but
    the operator never created the `pipeline` service account in new namespaces. The 1.22.5
    upgrade fixed it.
-3. OLM bundled both into one InstallPlan together with dns-operator 1.4.1, Service Mesh 3.4.2
-   and devworkspace-operator 0.43.0, so those went along for the ride.
+3. **The Argo CD application controller was OOMKilled** in a loop. 2 GiB is not enough to hold
+   the resource cache of a cluster with 141 projects, so GitOps was broken for everyone, not
+   just for us. It now has 6 GiB.
+
+OLM bundled the first two into one InstallPlan together with dns-operator 1.4.1, Service Mesh
+3.4.2 and devworkspace-operator 0.43.0, so those went along for the ride.
+
+Two things that bite on a first start and are worth knowing before you go live:
+
+- The per-user workspace PVC is deleted with the last workspace in a namespace, and the NetApp
+  storage class binds immediately rather than waiting for a consumer. So the very first start
+  after a clean-up can lose a race and fail with *"0/6 nodes are available: pod has unbound
+  immediate PersistentVolumeClaims"*. Starting it a second time works. `startTimeoutSeconds` is
+  up from 300 to 900 to give the pull of the 1.5 GB UDI image room as well.
+- Keep a stopped workspace around rather than deleting it, and the PVC stays bound.
 
 ## Secrets in the namespace
 
@@ -180,6 +221,17 @@ Three things had to be fixed on ocp4 before this worked:
 | `quay-push-secret` | buildah pushes to quay.io |
 | `git-push-ssh` | the pipeline writes the image tag back to this repo |
 | `webhook-secret` | shared HMAC secret between the git hook and the EventListener |
+
+And two in your own Dev Spaces namespace, which Dev Spaces mounts into every
+workspace because they carry `controller.devfile.io/mount-to-devworkspace=true`:
+
+| Secret | What for | Created by |
+|---|---|---|
+| `ice-demo-webhook` | `ICE_DEMO_WEBHOOK_URL` and `ICE_DEMO_WEBHOOK_SECRET` for the git hook | `hack/create-webhook-secret.sh` |
+| `ice-demo-git-ssh` | the deploy key, so you can push from the browser IDE | `hack/create-git-ssh-secret.sh <keyfile>` |
+
+Both scripts take the workspace namespace as their last argument and default to
+your current project.
 
 The SSH key is a deploy key scoped to this repository with write access. Rotate it by
 generating a new pair, replacing the GitHub deploy key, and updating the secret.
